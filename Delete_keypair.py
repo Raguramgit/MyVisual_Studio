@@ -1,3 +1,3 @@
 import boto3
-x = boto3.resource('ec2')
-x.delete_key_pair(KeyName='testing123',KeyPairId='key-00080e19217d07715')
+client = boto3.client('ec2')
+client.delete_key_pair(KeyName='test',KeyPairId='key-0f39cabac1bdeb033')
