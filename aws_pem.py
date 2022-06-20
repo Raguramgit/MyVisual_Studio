@@ -1,4 +1,3 @@
-from re import X
 import boto3
 x = boto3.resource('ec2')
 x.create_key_pair(KeyName='testing123')
