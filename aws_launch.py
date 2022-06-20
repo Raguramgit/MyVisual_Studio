@@ -11,5 +11,5 @@ instances = ec2.create_instances(
      MinCount=1,
      MaxCount=3,
      InstanceType='t2.micro',
-     KeyName='testing123'
+     KeyName='AWSkey'
  )
