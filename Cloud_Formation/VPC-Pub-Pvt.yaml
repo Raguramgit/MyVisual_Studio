@@ -1,0 +1,282 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: VPC with 2 Windows Instances
+
+Mappings: 
+  RegionMap: 
+    us-east-1:
+      HVM64: ami-0ff8a91507f77f867
+      HVMG2: ami-0a584ac55a7631c0c
+    us-west-1:
+      HVM64: ami-0bdb828fd58c52235
+      HVMG2: ami-066ee5fd4a9ef77f1
+    eu-west-1:
+      HVM64: ami-047bb4163c506cd98
+      HVMG2: ami-0a7c483d527806435
+    ap-northeast-1:
+      HVM64: ami-06cd52961ce9f0d85
+      HVMG2: ami-053cdd503598e4a9d
+    ap-southeast-1:
+      HVM64: ami-0e42bfd2029a917a4
+      HVMG2: ami-0be9df32ae9f92309
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label: 
+          Default: Instances
+        Parameters:
+          - InstanceType
+          - KeyName
+      -
+        Label:
+          Default: Network
+        Parameters:
+          - SSHLocation
+          - VpcCIDR
+          - PublicsubnetCIDR
+          - PrivatesubnetCIDR
+
+Parameters:
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Already available ec2 instance keypair
+
+  InstanceType:
+    Type: String
+    Description: New EC2 Instances
+    Default: t2.micro
+    AllowedValues: 
+      - t2.micro
+      - t2.small
+      - t2.medium 
+      - t2.large
+
+  VpcCIDR:
+    Default: 10.0.0.0/16
+    Description: Please enter the IP range of this VPC
+    Type: String
+  
+  PublicsubnetCIDR:
+    Default: 10.0.1.0/24
+    Description: Please Enter the value of public subnet
+    Type: String
+
+  PrivatesubnetCIDR:
+    Default: 10.0.2.0/24
+    Description: Please Enter the value of private subnet
+    Type: String
+
+  SSHLocation:
+    Description: The IP address range that can be used to SSH to the EC2 instances
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+
+Resources:
+  Ec2Instance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref Publicsubnet
+      SecurityGroupIds: 
+          - !Ref SourceSG
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - HVM64
+      Tags:
+        - Key : Name
+          Value: Facebook
+
+  Ec2Instance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      SecurityGroupIds:
+        - !Ref TargetSG
+      SubnetId: !Ref Privatesubnet
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+        - RegionMap
+        - !Ref AWS::Region
+        - HVM64
+      Tags:
+        - Key : Name
+          Value: Instagram
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Cloudformation-VPC
+
+  Publicsubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref PublicsubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Cloudformation-PublicSubnet
+
+  Privatesubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: 
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref PrivatesubnetCIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: Cloudformation-PrivateSubnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Cloudformation-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Cloudformation-PublicRT
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Cloudformation-PrivateRT 
+
+  PublicsubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref Publicsubnet
+       
+  PrivatesubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref Privatesubnet
+        
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId: !Ref PublicRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId: !Ref InternetGateway 
+
+  SourceSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Sample source security group
+      Tags:
+        - Key: Name
+          Value: FacebookSecurityGroup
+  TargetSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Sample target security group
+      Tags:
+        - Key: Name
+          Value: InstagramSecurityGroup      
+  OutboundRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      DestinationSecurityGroupId:
+        Fn::GetAtt:
+          - TargetSG
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - SourceSG
+          - GroupId
+  InboundRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId:
+        Fn::GetAtt:
+          - SourceSG
+          - GroupId
+      GroupId:
+        Fn::GetAtt:
+          - TargetSG
+          - GroupId
+        
+Outputs:
+  InstanceId1:
+    Value: !Ref Ec2Instance1
+    Description: Ec2 Instances ID
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceId1
+
+  InstanceId2:
+    Value: !Ref Ec2Instance2
+    Description: Ec2 Instances ID
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceId2
+
+  SourceSGId:
+    Value: !Ref SourceSG
+    Description: Security Group of Facebook Instances
+    Export:
+      Name: !Sub ${AWS::StackName}-SourceSGId
+
+  TargetSGId:
+    Value: !Ref TargetSG
+    Description: Security Group of Instagram Instances
+    Export:
+      Name: !Sub ${AWS::StackName}-TargetSGId
+  
+  Facebookpublicsubnet:
+    Value: !Ref Publicsubnet
+    Description: Subnet of Facebook Instance
+    Export:
+      Name: !Sub ${AWS::StackName}-Facebookpublicsubnet
+
+  Facebookprivatesubnet:
+    Value: !Ref Privatesubnet
+    Description: Subnet of Instagram Instance
+    Export:
+      Name: !Sub ${AWS::StackName}-Instagrampublicsubnet
+  

@@ -32,7 +32,7 @@ Metadata:
           - KeyName
       -
         Label:
-          Default: Instances
+          Default: Network
         Parameters:
           - SSHLocation
 
@@ -91,3 +91,24 @@ Resources:
       Tags:
         - Key: Name
           Value: Mypubsub
+        
+Outputs:
+  InstanceId:
+    Value: !Ref Ec2Instance
+    Description: Ec2 Instances ID
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceId
+
+  SecurityGroupId:
+    Value: !Ref InstanceSecurityGroup
+    Description: Security Group of Newly launched EC2 Instances
+    Export:
+      Name: !Sub ${AWS::StackName}-SecurityGroupId
+
+  AvailabilityZone: 
+    Value: !Select 
+    - 0
+    - Fn::GetAZs: !Ref 'AWS::Region'
+    Description: Availablility Zone of Newly launched EC2 Instances
+    Export:
+      Name: !Sub ${AWS::StackName}-AvailabilityZone
