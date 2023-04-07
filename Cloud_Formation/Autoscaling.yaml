@@ -54,6 +54,16 @@ Parameters:
       - t2.medium 
       - t2.large
 
+  VpcCIDR:
+    Default: 10.0.0.0/16
+    Description: Please enter the IP range of this VPC
+    Type: String
+  
+  PublicsubnetCIDR:
+    Default: 10.0.1.0/24
+    Description: Please Enter the value of public subnet
+    Type: String
+
   SSHLocation:
     Description: The IP address range that can be used to SSH to the EC2 instances
     Type: String
@@ -64,6 +74,44 @@ Parameters:
     ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
 
 Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: Cloudformation-VPC
+
+  Publicsubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Ref PublicsubnetCIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Cloudformation-PublicSubnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Cloudformation-IGW
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
   myLaunchConfig: 
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
@@ -72,40 +120,63 @@ Resources:
         - !Ref AWS::Region
         - HVM64
       SecurityGroups: 
-        - !Ref myEC2SecurityGroup
+        - !Ref LoadbalancerSecurityGroup
       InstanceType: 
-        !Ref InstanceType
+        - !Ref InstanceType
+      KeyName:
+        - !Ref KeyName
       BlockDeviceMappings: 
         - DeviceName: /dev/sda1
           Ebs: 
             VolumeSize: '8'
             VolumeType: gp3
             DeleteOnTermination: true
-  MyLoadBalancer:
+
+  myASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      #LaunchConfigurationName : !Ref myLaunchConfig
+      AvailabilityZones:
+        - "ap-southeast-1a"
+        - "ap-southeast-1b"
+      MaxSize: '5'
+      MinSize: '1'
+      DesiredCapacity: '2'
+      InstanceId: !Ref myLaunchConfig
+      #LoadBalancerNames: myLoadBalancer
+
+  myLoadBalancer:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
     Properties:
-      AvailabilityZones:
-        Fn::Select:
-          - 0
-          - Fn::GetAZs: ""
+      VpcId: !Ref VPC
       CrossZone: true
       Listeners:
       - InstancePort: '80'
-        InstanceProtocol: HTTP
-        LoadBalancerPort: '443'
-        Protocol: HTTPS
-        PolicyNames: 
-        - My-SSLNegotiation-Policy
-        SSLCertificateId: arn:aws:iam::123456789012:server-certificate/my-server-certificate
+        LoadBalancerPort: '80'
+        Protocol: HTTP
       HealthCheck:
         Target: HTTP:80/
-        HealthyThreshold: '2'
+        HealthyThreshold: '10'
         UnhealthyThreshold: '3'
-        Interval: '10'
+        Interval: '30'
         Timeout: '5'
-      Policies:
-      - PolicyName: My-SSLNegotiation-Policy
-        PolicyType: SSLNegotiationPolicyType
-        Attributes:
-        - Name: Reference-Security-Policy
-          Value: ELBSecurityPolicy-TLS-1-2-2017-01
+      SecurityGroups: 
+        - !Ref LoadbalancerSecurityGroup
+      Instances: 
+        - !Ref myASG
+      Subnets:
+        - !Ref Publicsubnet
+
+  LoadbalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: Load Balance Security Group
+  LoadbalancerSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref LoadbalancerSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref LoadbalancerSecurityGroup
